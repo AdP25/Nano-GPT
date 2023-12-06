@@ -1,4 +1,6 @@
 import torch
+import torch.nn as nn
+from torch.nn import functional as F
 
 with open("input.txt", 'r', encoding='utf-8') as file:
     text = file.read()
@@ -10,8 +12,8 @@ print(text[:100])
 tot_chars = sorted(list(set(text)))
 # print(tot_chars)
 
-# len_chars = len(tot_chars)
-# print(len_chars)
+vocab_size = len(tot_chars)
+# print(vocab_size)
 
 # map characters to integers
 stoi = {c:i for i,c in enumerate(tot_chars)}
@@ -83,6 +85,57 @@ for i in range(batch_size):
         context = x_batch[i, :j+1]
         target = y_batch[i,j]
         print(f"For Input = {context.tolist()} Target = {target}")
+
+embedding_dim = vocab_size
+class BigramLanguageModel(nn.Module):
+
+    def __init__(self, vocab_size):
+        super().__init__()
+        # the input and output size of the embedding table are both set to vocab_size
+        self.embedding_table = nn.Embedding(vocab_size, embedding_dim)
+    # The forward method in a neural network class defines the computation performed when input data is passed through the network.
+    # It describes how the input data flows through the layers of the network to produce the output (predictions or activations).
+    def forward(self, b_t_input, targets=None):
+        # Batch(4) Time(8) Channel(65) - BTC
+        # b_t_input and targets are both (B,T) tensor of integers
+        # b_t_input represents a batch of sequences (tensor of integers) for which we want to predict the next tokens.
+        # logits computes the embeddings for the input sequences using the embedding table.
+        logits = self.embedding_table(b_t_input) # (B,T,C)
+        
+        if targets is None:
+            loss = None
+        else:
+            # in case of multi-dimensional logits, cross entropy expects B C T not B T C hence reshaping
+            B, T, C = logits.shape
+            logits = logits.view(B*T, C)
+            targets = targets.view(B*T)
+            loss = F.cross_entropy(logits, targets)
+
+        return logits, loss
+    # B T -> B T+1 -> B T+2 ... upto max_new_tokens
+    def generate(self, b_t_input, max_new_tokens):
+        # b_t_input is (B, T) array of indices
+        for _ in range(max_new_tokens):
+            logits, loss = self(b_t_input) # BTC
+            # focus only on the last time step
+            # in the context of sequence data (like text or time-series), the last time step refers to the final element in the sequence.
+            # This extraction is often useful in tasks where the model needs to make predictions 
+            # or decisions based on the last observed data point or context in each sequence.
+            logits = logits[:, -1, :] # becomes (B, C)
+            # apply softmax to get probabilities
+            probs = F.softmax(logits, dim=-1) # (B, C)
+            # sample a new token index based on the predicted probabilities using torch.multinomial.
+            b_t_next = torch.multinomial(probs, num_samples=1) # (B, 1)
+            # append the sampled token index to the running sequence
+            b_t_input = torch.cat((b_t_input, b_t_next), dim=1) # (B, T+1)
+        return b_t_input
+
+m = BigramLanguageModel(vocab_size)
+logits, loss = m(x_batch, y_batch)
+print(logits.shape)
+# expected ->{ -ln(1/65) = 4.17438 }
+print(loss)
+
 
 
 
