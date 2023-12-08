@@ -123,6 +123,8 @@ class BigramLanguageModel(nn.Module):
             # or decisions based on the last observed data point or context in each sequence.
             logits = logits[:, -1, :] # becomes (B, C)
             # apply softmax to get probabilities
+            # Each "class" (c) refers to a specific category or label that the model is predicting.
+            # The probabilities (probs) indicate the model's confidence or belief regarding each class for each sample in the batch.
             probs = F.softmax(logits, dim=-1) # (B, C)
             # sample a new token index based on the predicted probabilities using torch.multinomial.
             b_t_next = torch.multinomial(probs, num_samples=1) # (B, 1)
@@ -136,6 +138,37 @@ print(logits.shape)
 # expected ->{ -ln(1/65) = 4.17438 }
 print(loss)
 
+# the starting point or initial token for sequence generation - 0 i.e the new line char
+b_t_input = torch.zeros((1, 1), dtype=torch.long)
+print(decode(m.generate(b_t_input, max_new_tokens=100)[0].tolist()))
 
+# PyTorch optimizer
+# torch.optim.AdamW: This is the AdamW optimizer class provided by PyTorch for optimizing neural network models. 
+# AdamW is a variant of the Adam optimizer that incorporates weight decay regularization to help prevent overfitting.
 
+# m.parameters(): This function call retrieves the parameters (weights and biases) of the model m. 
+# These are the tensors in the model that the optimizer will update during the training process to minimize the loss function.
 
+# lr=1e-3: This specifies the learning rate for the optimizer. The learning rate determines the size of the step taken during the optimization process. 
+# A learning rate of 1e-3 (0.001) means that the parameters will be updated with a step size of 0.001 times the gradient.
+optimizer = torch.optim.AdamW(m.parameters(), lr=1e-3)
+
+batch_size = 32
+for steps in range(10000): # increase number of steps for good results... 
+    
+    # sample a batch of data
+    xb, yb = get_batch('train')
+
+    # evaluate the loss
+    logits, loss = m(xb, yb)
+    # Clears (zeros out) the gradients of the model parameters to prevent gradient accumulation from previous iterations. 
+    # The set_to_none=True argument sets the gradients to None after zeroing them for efficiency.
+    optimizer.zero_grad(set_to_none=True)
+    # Computes the gradients of the loss with respect to the model's parameters using backpropagation
+    loss.backward()
+    # Updates the model's parameters using the computed gradients and the optimization algorithm (AdamW in this case) to perform a parameter update.
+    optimizer.step()
+
+print(loss.item())
+
+print(decode(m.generate(b_t_input = torch.zeros((1, 1), dtype=torch.long), max_new_tokens=500)[0].tolist()))
