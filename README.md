@@ -210,3 +210,22 @@ Information Flow:
 
 This mechanism allows each token to consider information from all tokens preceding it in the sequence, capturing contextual information effectively.
 By computing this weighted sum (often using softmax-normalized attention scores), tokens in self-attention mechanisms can communicate effectively, enabling richer representations that incorporate information from other tokens in the sequence. This process plays a crucial role in the success of Transformer-based models in various natural language processing tasks by facilitating capturing long-range dependencies and context information efficiently across sequences.
+
+
+# ----- HEAD  -----
+
+In the context of self-attention mechanisms, the term "head" refers to a component that splits the input into multiple parts, processes each part independently, and then combines the results. In the Transformer architecture, which utilizes multi-head attention, a "head" represents a distinct parallel attention mechanism that operates on different representations of the input data.
+
+Here's a breakdown:
+
+Single vs. Multi-Head Attention:
+
+Single Head: In standard attention mechanisms, there's only one set of attention weights calculated for the input sequence.
+Multi-Head: In multi-head attention, the input data undergoes linear transformations to create multiple sets (or "heads") of queries, keys, and values. These heads run separate attention computations in parallel.
+Purpose of Using Multiple Heads:
+
+Capturing Different Information: Each head can focus on different parts or aspects of the input sequence, allowing the model to learn different relationships between tokens.
+Enhanced Representations: Multiple heads provide the model with richer, diverse perspectives on the data, potentially improving its ability to understand relationships and capture complex patterns.
+Combining Heads:
+
+After the separate heads perform their individual attention computations, their results are concatenated or combined in some way (often by concatenation and another linear transformation) before being used further in the network.
