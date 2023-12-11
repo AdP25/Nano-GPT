@@ -13,7 +13,7 @@ eval_iters = 200
 embedding_dim = 64
 n_head = 4
 n_layer = 4
-dropout = 0.0
+dropout = 0.1
 
 torch.manual_seed(1337)
 
@@ -70,6 +70,30 @@ def estimate_loss():
     model.train()
     return out
 
+class LayerNorm1d: # (used to be BatchNorm1d)
+  
+  def __init__(self, dim, eps=1e-5, momentum=0.1):
+    self.eps = eps
+    self.gamma = torch.ones(dim)
+    self.beta = torch.zeros(dim)
+  
+  def __call__(self, x):
+    # calculate the forward pass
+    xmean = x.mean(1, keepdim=True) # batch mean
+    xvar = x.var(1, keepdim=True) # batch variance
+    xhat = (x - xmean) / torch.sqrt(xvar + self.eps) # normalize to unit variance
+    self.out = self.gamma * xhat + self.beta
+    return self.out
+  
+  def parameters(self):
+    return [self.gamma, self.beta]
+
+# torch.manual_seed(1337)
+# module = LayerNorm1d(100)
+# x = torch.randn(32, 100) # batch size 32 of 100-dimensional vectors
+# x = module(x)
+# x.shape
+
 class Head(nn.Module):
     """ one head of self-attention """
 
@@ -79,7 +103,8 @@ class Head(nn.Module):
         self.query = nn.Linear(embedding_dim, head_size, bias=False)
         self.value = nn.Linear(embedding_dim, head_size, bias=False)
         self.register_buffer('tril', torch.tril(torch.ones(block_size, block_size)))
-
+        # randomly shuts off some subsets of neurons and ends up training an emsemble of sub-networks
+        # regularization technique
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, x):
@@ -149,6 +174,24 @@ class FeedFoward(nn.Module):
         return self.net(x)
     
 
+class Block(nn.Module):
+    """ Transformer block: communication followed by computation """
+
+    def __init__(self, embedding_dim, n_head):
+        super().__init__()
+        head_size = embedding_dim // n_head
+        self.sa = MultiHeadAttention(n_head, head_size)
+        self.ffwd = FeedFoward(embedding_dim)
+        self.ln1 = nn.LayerNorm(embedding_dim)
+        self.ln2 = nn.LayerNorm(embedding_dim)
+
+    def forward(self, x):
+        # read about residual blocks
+        x = x + self.sa(self.ln1(x))
+        x = x + self.ffwd(self.ln2(x))
+        return x
+
+
 # Embedding Lookup (self.token_embedding_table):
 
 # Imagine a table that assigns a unique set of numbers (vectors) to each word in a vocabulary. For example, 'dog' might be represented by [0.1, 0.3, -0.2], 'cat' by [0.2, -0.1, 0.5], and so on. These numbers are called embeddings.
@@ -170,8 +213,16 @@ class BigramLanguageModel(nn.Module):
         # encoding the position of tokens as well
         self.position_embedding_table = nn.Embedding(block_size, embedding_dim)
         # self.sa_head = Head(embedding_dim)
-        self.sa_heads = MultiHeadAttention(4, embedding_dim//4) # 4 head of 8-dim self attention
-        self.ffwd = FeedFoward(embedding_dim)
+        # self.sa_heads = MultiHeadAttention(4, embedding_dim//4) # 4 head of 8-dim self attention
+        # self.ffwd = FeedFoward(embedding_dim)
+        # self.blocks = nn.Sequential(
+        #     Block(embedding_dim, n_head=4),
+        #     Block(embedding_dim, n_head=4),
+        #     Block(embedding_dim, n_head=4),
+        #     nn.LayerNorm(embedding_dim),
+        # )
+        self.blocks = nn.Sequential(*[Block(embedding_dim, n_head=n_head) for _ in range(n_layer)])
+        self.ln_f = nn.LayerNorm(embedding_dim) # final layer norm
         self.lm_head = nn.Linear(embedding_dim, vocab_size)
 
     def forward(self, b_t_input, targets=None):
@@ -179,8 +230,9 @@ class BigramLanguageModel(nn.Module):
         tok_emb = self.token_embedding_table(b_t_input) # (B,T,C)
         pos_emb = self.position_embedding_table(torch.arange(T, device=device)) # (T,C)
         x = tok_emb + pos_emb # (B,T,C)
-        x = self.sa_heads(x) # apply one head of self attention BTC
-        x = self.ffwd(x) # BTC
+        # x = self.sa_heads(x) # apply one head of self attention BTC
+        # x = self.ffwd(x) # BTC
+        x = self.blocks(x) # BTC
         # self attention is gathering all the data and in feed fwd, each token will process the data individually
         logits = self.lm_head(x) # (B,T,vocab_size)
         if targets is None:
