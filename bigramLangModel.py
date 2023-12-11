@@ -113,8 +113,41 @@ class MultiHeadAttention(nn.Module):
         out = self.dropout(self.proj(out))
         return out
 
+# Initialization (__init__):
 
+# embedding_dim: Specifies the dimensionality of the input and output embeddings or features.
+# Network Structure (self.net):
 
+# nn.Sequential: Groups together a sequence of neural network layers to create the feedforward network.
+# nn.Linear(embedding_dim, 4 * embedding_dim): The first linear layer performs an affine transformation,
+#  projecting the input embedding_dim to a higher-dimensional space (4 * embedding_dim). This expansion allows the model to capture more complex patterns.
+# nn.ReLU(): The rectified linear unit (ReLU) activation function introduces non-linearity by outputting the maximum between zero and the input value, 
+# helping the network model more complex relationships in the data.
+# nn.Linear(4 * embedding_dim, embedding_dim): The second linear layer reduces the dimensionality back to the original embedding_dim, compressing the 
+# information learned in the higher-dimensional space.
+# nn.Dropout(dropout): Applies dropout regularization, randomly setting a fraction of input units to zero during training to prevent overfitting. 
+# The dropout value needs to be defined during initialization.
+# Forward Pass (forward method):
+
+# forward(self, x): Performs the forward pass through the defined network.
+# self.net(x): Passes the input x through the sequential network structure, executing the linear transformations and activation functions in sequence.
+# Returns the output of the network.
+
+class FeedFoward(nn.Module):
+    """ a simple linear layer followed by a non-linearity """
+
+    def __init__(self, embedding_dim):
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.Linear(embedding_dim, 4 * embedding_dim),
+            nn.ReLU(),
+            nn.Linear(4 * embedding_dim, embedding_dim),
+            nn.Dropout(dropout),
+        )
+
+    def forward(self, x):
+        return self.net(x)
+    
 
 # Embedding Lookup (self.token_embedding_table):
 
@@ -137,7 +170,8 @@ class BigramLanguageModel(nn.Module):
         # encoding the position of tokens as well
         self.position_embedding_table = nn.Embedding(block_size, embedding_dim)
         # self.sa_head = Head(embedding_dim)
-        self.sa_head = MultiHeadAttention(4, embedding_dim//4) # 4 head of 8-dim self attention
+        self.sa_heads = MultiHeadAttention(4, embedding_dim//4) # 4 head of 8-dim self attention
+        self.ffwd = FeedFoward(embedding_dim)
         self.lm_head = nn.Linear(embedding_dim, vocab_size)
 
     def forward(self, b_t_input, targets=None):
@@ -145,7 +179,9 @@ class BigramLanguageModel(nn.Module):
         tok_emb = self.token_embedding_table(b_t_input) # (B,T,C)
         pos_emb = self.position_embedding_table(torch.arange(T, device=device)) # (T,C)
         x = tok_emb + pos_emb # (B,T,C)
-
+        x = self.sa_heads(x) # apply one head of self attention BTC
+        x = self.ffwd(x) # BTC
+        # self attention is gathering all the data and in feed fwd, each token will process the data individually
         logits = self.lm_head(x) # (B,T,vocab_size)
         if targets is None:
             loss = None
